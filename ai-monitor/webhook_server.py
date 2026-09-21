@@ -1,4 +1,6 @@
+import os
 import threading
+from datetime import datetime, timedelta
 from flask import Flask, abort
 from db import get_pending_action, update_pending_action_status, update_action
 from remediator import run as run_remediation
@@ -8,22 +10,44 @@ app = Flask(__name__)
 _webhook_url_map = {}  # node → webhook_url
 _mention_map = {}      # node → (mention_id, owner)
 
+# 담당자가 오랫동안 확인하지 않은 자동조치 링크를 계속 유효하게 두지 않기 위한 만료 시간.
+# 링크가 Teams 메시지 포워딩, 브라우저 히스토리 등으로 새더라도 만료 후엔 실행 불가.
+ACTION_TOKEN_TTL_MINUTES = int(os.getenv("ACTION_TOKEN_TTL_MINUTES", "60"))
+
 
 def start(nodes_cfg, port=8080):
     for node, cfg in nodes_cfg.items():
         _webhook_url_map[node] = cfg.get("teams_webhook", "")
         _mention_map[node] = (cfg.get("teams_mention_id", ""), cfg.get("owner", ""))
 
-    t = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=port), daemon=True)
+    t = threading.Thread(
+        target=lambda: app.run(host="0.0.0.0", port=port, threaded=True),
+        daemon=True,
+    )
     t.start()
     print(f"[Webhook] 액션 서버 시작 - port {port}")
 
 
-@app.route("/action/<token>/confirm")
-def action_confirm(token):
+def _get_valid_pending_action(token):
+    """토큰에 해당하는 action을 조회하고, pending 상태인데 TTL이 지났으면 expired 처리한다."""
     action = get_pending_action(token)
     if not action:
+        return None
+    if action["status"] == "pending":
+        created = datetime.fromisoformat(action["created_at"])
+        if datetime.now() - created > timedelta(minutes=ACTION_TOKEN_TTL_MINUTES):
+            update_pending_action_status(token, "expired")
+            action["status"] = "expired"
+    return action
+
+
+@app.route("/action/<token>/confirm")
+def action_confirm(token):
+    action = _get_valid_pending_action(token)
+    if not action:
         abort(404)
+    if action["status"] == "expired":
+        return _html_done("만료된 요청입니다. 담당자가 직접 확인하세요.", action)
     if action["status"] != "pending":
         return _html_done("이미 처리된 요청입니다.", action)
 
@@ -64,9 +88,11 @@ def action_confirm(token):
 
 @app.route("/action/<token>/run", methods=["POST"])
 def action_run(token):
-    action = get_pending_action(token)
+    action = _get_valid_pending_action(token)
     if not action:
         abort(404)
+    if action["status"] == "expired":
+        return _html_done("만료된 요청입니다. 담당자가 직접 확인하세요.", action)
     if action["status"] != "pending":
         return _html_done("이미 처리된 요청입니다.", action)
 
@@ -85,9 +111,11 @@ def action_run(token):
 
 @app.route("/action/<token>/skip")
 def action_skip(token):
-    action = get_pending_action(token)
+    action = _get_valid_pending_action(token)
     if not action:
         abort(404)
+    if action["status"] == "expired":
+        return _html_done("만료된 요청입니다. 담당자가 직접 확인하세요.", action)
     if action["status"] != "pending":
         return _html_done("이미 처리된 요청입니다.", action)
 
