@@ -12,7 +12,7 @@ Prometheus로 메트릭을 수집하고, OpenAI 모델이 원인을 분석하여
 
 분석 결과는 **Microsoft Teams**로 알림이 가고, 담당자는 Teams 카드의 버튼을 눌러 자동조치를 승인할 수 있습니다. 이 승인은 별도의 Flask **webhook 서버**(8080 포트)가 처리하는데, 실제 명령 실행은 POST 요청으로만 가능하게 만들어 URL 스캐너의 오작동을 방지했습니다. 승인되면 SSH로 실제 조치가 실행되고 그 결과가 다시 Teams로 통보됩니다.
 
-모든 장애 이력과 승인 대기 중인 조치는 **SQLite DB**에 기록되어 중복 알림을 막고, **Grafana**로 메트릭을 시각화할 수 있습니다. 전체가 Docker Compose로 구성되어 있어 `docker compose up -d` 한 번으로 전체 스택이 뜨는 구조입니다.
+모든 장애 이력과 승인 대기 중인 조치는 **SQLite DB**에 기록되어 중복 알림을 막습니다. Prometheus가 수집한 메트릭은 필요하면 별도의 **Grafana**를 붙여 시각화할 수 있습니다(기본 docker-compose에는 포함되어 있지 않음). ai-monitor와 Prometheus는 Docker Compose로 구성되어 있어 `docker compose up -d` 한 번으로 뜨는 구조입니다.
 
 ## 전체 흐름
 
@@ -56,8 +56,9 @@ Teams 알림 (분석 결과 + 자동조치 버튼)
 ├── scripts/
 │   ├── install_node_exporter.sh # 모니터링 대상 서버에 node_exporter를 systemd로 설치
 │   └── backup_monitor_db.sh   # monitor.db 백업 스크립트 (cron 등록용)
-├── docker-compose.yml
-├── ssh_key.pem                 # 대상 서버 접속용 SSH 개인키 (직접 준비, .gitignore 처리, 이미지에는 포함되지 않고 볼륨 마운트됨)
+├── docker-compose.yml.example   # docker-compose.yml 예시 (docker-compose.yml은 .gitignore 처리, 직접 준비)
+├── docker-compose.yml           # 실제 설정 (SSH 키 파일명이 그대로 노출되므로 .gitignore 처리)
+├── *.pem                        # 대상 서버 접속용 SSH 개인키(노드마다 다를 수 있음, 직접 준비, .gitignore 처리, 이미지에는 포함되지 않고 볼륨 마운트됨)
 ├── .env.example                # 환경변수 예시 (OPENAI_API_KEY)
 └── .gitignore
 ```
@@ -116,7 +117,9 @@ SQLite 기반 데이터 저장.
 
 Java 프로세스 진단에 쓰는 `jcmd`, `jstat`, `jstack`은 기본적으로 대상 서버의 `PATH`와 일반 JDK 설치 경로(`/usr/lib/jvm`, `/usr/java`, `/opt/java`, `/opt/jdk`)에서 자동 탐색합니다. 서버마다 OpenJDK 경로가 다르면 `defaults`나 각 노드 밑에 `java_home` 또는 `jdk_bin_path`를 지정하면 됩니다.
 
-`ssh_key_path`가 가리키는 실제 키 파일은 `ai-monitor/` 안이 아니라 저장소 최상위 `ssh_key.pem`에 둡니다. Docker 빌드 컨텍스트(`ai-monitor/`) 밖에 있어야 이미지에 키가 baked-in 되지 않고, `docker-compose.yml`이 컨테이너의 `/app/ssh_key.pem`으로 볼륨 마운트합니다.
+`ssh_key_path`가 가리키는 실제 키 파일은 `ai-monitor/` 안이 아니라 저장소 최상위에 둡니다. Docker 빌드 컨텍스트(`ai-monitor/`) 밖에 있어야 이미지에 키가 baked-in 되지 않고, `docker-compose.yml`이 컨테이너 내부 경로(예: `/app/ssh_key.pem`)로 볼륨 마운트합니다.
+
+노드마다 접속에 쓰는 키가 다르면(예: 고객사별로 별도 키 발급) `defaults.ssh_key_path`에 기본 키를 지정하고, 다른 키를 쓰는 노드 밑에 `ssh_key_path`를 덮어쓰면 됩니다. 이때 `docker-compose.yml`에도 해당 키 파일을 볼륨으로 추가해야 합니다. `docker-compose.yml`은 키 파일명이 그대로 드러나므로 `.gitignore` 처리되어 있고, 구조만 보여주는 `docker-compose.yml.example`을 커밋해둡니다.
 
 ```yaml
 callback_base_url: "http://공인IP또는도메인:8080"  # 담당자가 Teams 버튼을 누를 때 접근할 자동조치 서버 주소
@@ -189,12 +192,14 @@ OPENAI_API_KEY=sk-...
 ```bash
 cp ai-monitor/config.yaml.example ai-monitor/config.yaml
 cp prometheus/prometheus.yml.example prometheus/prometheus.yml
+cp docker-compose.yml.example docker-compose.yml
 cp .env.example .env
-# config.yaml, prometheus.yml, .env 에 실제 값 입력
+# config.yaml, prometheus.yml, docker-compose.yml, .env 에 실제 값 입력
 
-# 대상 서버 접속용 SSH 개인키를 저장소 최상위(ai-monitor/ 안이 아님)에 위치시킴
-cp /path/to/your_key.pem ssh_key.pem
-chmod 600 ssh_key.pem
+# 대상 서버 접속용 SSH 개인키를 저장소 최상위(ai-monitor/ 안이 아님)에 위치시키고,
+# docker-compose.yml에 볼륨 마운트를 추가(노드마다 키가 다르면 여러 개 추가)
+cp /path/to/your_key.pem your_key.pem
+chmod 600 your_key.pem
 ```
 
 2. **node_exporter 설치** (모니터링 대상 서버마다)

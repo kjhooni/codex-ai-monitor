@@ -2,6 +2,7 @@
 .env
 ai-monitor/config.yaml
 prometheus/prometheus.yml
+docker-compose.yml
 *.pem
 
 # Claude Code
