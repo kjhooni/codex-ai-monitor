@@ -90,6 +90,7 @@ Microsoft Teams로 알림을 발송합니다.
 ### `ai-monitor/remediator.py`
 SSH로 대상 서버에 접속하여 명령어를 실행합니다.
 - `collect_diagnostics()`: 장애 분석 전 ps, free, df 등 진단 데이터 수집
+- CPU/Memory 알람의 최상위 원인 프로세스가 Java이면 `jcmd`, `jstat`, `jstack`으로 JVM 상태와 CPU 상위 스레드 스택을 추가 수집
 - `run()`: AI가 생성한 명령어 또는 기본 조치 스크립트 실행, stdout/exit code 반환
 
 ### `ai-monitor/webhook_server.py`
@@ -113,6 +114,8 @@ SQLite 기반 데이터 저장.
 
 `ssh_port`는 기본값 22이며, SSH 포트가 다른 노드는 해당 노드 밑에 `ssh_port`를 적어서 덮어쓰면 됩니다.
 
+Java 프로세스 진단에 쓰는 `jcmd`, `jstat`, `jstack`은 기본적으로 대상 서버의 `PATH`와 일반 JDK 설치 경로(`/usr/lib/jvm`, `/usr/java`, `/opt/java`, `/opt/jdk`)에서 자동 탐색합니다. 서버마다 OpenJDK 경로가 다르면 `defaults`나 각 노드 밑에 `java_home` 또는 `jdk_bin_path`를 지정하면 됩니다.
+
 `ssh_key_path`가 가리키는 실제 키 파일은 `ai-monitor/` 안이 아니라 저장소 최상위 `ssh_key.pem`에 둡니다. Docker 빌드 컨텍스트(`ai-monitor/`) 밖에 있어야 이미지에 키가 baked-in 되지 않고, `docker-compose.yml`이 컨테이너의 `/app/ssh_key.pem`으로 볼륨 마운트합니다.
 
 ```yaml
@@ -131,6 +134,8 @@ defaults:
   teams_mention_id: "Azure AD Object ID"
   teams_webhook: "Power Automate Webhook URL"
   ssh_key_path: "ssh_key.pem"
+  # 공통 JDK 경로가 있으면 지정. 노드별로 다르면 각 노드 밑에서 덮어쓰기 가능.
+  # java_home: "/usr/lib/jvm/java-17-openjdk-amd64"
 
 nodes:
   서버이름1:
@@ -140,6 +145,7 @@ nodes:
   서버이름2:
     ip: "서버IP"
     os: "ubuntu"   # → ssh_user: ubuntu 로 자동 결정
+    # jdk_bin_path: "/usr/lib/jvm/java-17-openjdk-amd64/bin"
 ```
 
 ### `prometheus/prometheus.yml`

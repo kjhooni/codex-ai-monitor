@@ -26,21 +26,86 @@ DIAGNOSTIC_COMMANDS = {
 #jstack 덤프만으로는 CPU를 많이 쓰는 스레드를 특정할 수 없으므로,
 #ps -T(=top -H와 동일한 스레드별 CPU 정보)로 CPU 상위 스레드의 spid(=LWP/TID)를 구하고
 #hex로 변환해 jstack의 nid= 값과 매칭시켜 해당 스레드의 스택트레이스만 별도로 뽑아낸다.
-JAVA_DIAGNOSTIC_COMMAND = (
-    "echo '=== jcmd VM.uptime ==='; jcmd {pid} VM.uptime; "
-    "echo '=== jstat -gcutil (GC 현황, 1초 간격 3회) ==='; jstat -gcutil {pid} 1000 3; "
+JAVA_DIAGNOSTIC_COMMAND_TEMPLATE = (
+    "__JAVA_PATH_SETUP__"
+    "_find_java_tool() { "
+    "tool=\"$1\"; "
+    "if [ -n \"$AI_MONITOR_JDK_BIN_PATHS\" ]; then "
+    "OLD_IFS=\"$IFS\"; IFS=':'; "
+    "for dir in $AI_MONITOR_JDK_BIN_PATHS; do "
+    "[ -n \"$dir\" ] || continue; "
+    "if [ -x \"$dir/$tool\" ]; then IFS=\"$OLD_IFS\"; echo \"$dir/$tool\"; return 0; fi; "
+    "done; "
+    "IFS=\"$OLD_IFS\"; "
+    "fi; "
+    "java_exe=$(readlink -f /proc/__PID__/exe 2>/dev/null || true); "
+    "if [ -n \"$java_exe\" ]; then "
+    "java_bin_dir=$(dirname \"$java_exe\"); "
+    "if [ -x \"$java_bin_dir/$tool\" ]; then echo \"$java_bin_dir/$tool\"; return 0; fi; "
+    "fi; "
+    "if command -v \"$tool\" >/dev/null 2>&1; then command -v \"$tool\"; return 0; fi; "
+    "for base in /usr/lib/jvm /usr/java /opt/java /opt/jdk; do "
+    "[ -d \"$base\" ] || continue; "
+    "found=$(find \"$base\" -path \"*/bin/$tool\" 2>/dev/null | while read -r candidate; do [ -x \"$candidate\" ] && { echo \"$candidate\"; break; }; done | head -1); "
+    "if [ -n \"$found\" ]; then echo \"$found\"; return 0; fi; "
+    "done; "
+    "return 1; "
+    "}; "
+    "JCMD=$(_find_java_tool jcmd || true); "
+    "JSTAT=$(_find_java_tool jstat || true); "
+    "JSTACK=$(_find_java_tool jstack || true); "
+    "if [ -z \"$JCMD\" ] || [ -z \"$JSTAT\" ] || [ -z \"$JSTACK\" ]; then "
+    "echo 'JDK 진단 도구(jcmd/jstat/jstack)를 찾지 못했습니다. config.yaml에 java_home 또는 jdk_bin_path를 설정하거나 JDK devel/headless 패키지를 설치하세요.'; "
+    "echo \"jcmd=$JCMD\"; echo \"jstat=$JSTAT\"; echo \"jstack=$JSTACK\"; "
+    "exit 0; "
+    "fi; "
+    "echo \"JDK tools: jcmd=$JCMD, jstat=$JSTAT, jstack=$JSTACK\"; "
+    "echo '=== jcmd VM.uptime ==='; \"$JCMD\" __PID__ VM.uptime; "
+    "echo '=== jstat -gcutil (GC 현황, 1초 간격 3회) ==='; \"$JSTAT\" -gcutil __PID__ 1000 3; "
     "echo '=== CPU 상위 스레드 TOP5 (ps -T, spid=TID) ==='; "
-    "PS_OUT=$(ps -T -p {pid} -o spid,pcpu,comm --sort=-pcpu | tail -n +2 | head -5); "
+    "PS_OUT=$(ps -T -p __PID__ -o spid,pcpu,comm --sort=-pcpu | tail -n +2 | head -5); "
     "echo \"$PS_OUT\"; "
-    "JSTACK_OUT=$(jstack {pid} 2>&1); "
+    "JSTACK_OUT=$(\"$JSTACK\" __PID__ 2>&1); "
     "echo '=== CPU 상위 스레드의 jstack 스택트레이스 (spid -> hex -> nid 매칭) ==='; "
-    "echo \"$PS_OUT\" | while read spid pcpu comm; do "
+    "echo \"$PS_OUT\" | while read -r spid pcpu comm; do "
     "nid=$(printf '0x%x' \"$spid\"); "
     "echo \"--- spid=$spid cpu=$pcpu% comm=$comm nid=$nid ---\"; "
-    "echo \"$JSTACK_OUT\" | awk -v n=\"nid=$nid\" '$0 ~ n {{flag=1}} flag {{print}} flag && /^$/ {{exit}}'; "
+    "echo \"$JSTACK_OUT\" | awk -v n=\"nid=$nid\" '$0 ~ n {flag=1} flag {print} flag && /^$/ {exit}'; "
     "done; "
     "echo '=== jstack 전체 덤프 (참고용) ==='; echo \"$JSTACK_OUT\" | head -300"
 )
+
+
+def _java_path_setup(node_config):
+    """노드별 JDK 경로를 sudo 실행 쉘의 PATH 앞쪽에 추가한다."""
+    paths = []
+
+    jdk_bin_path = node_config.get("jdk_bin_path")
+    if jdk_bin_path:
+        paths.append(jdk_bin_path.rstrip("/"))
+
+    java_home = node_config.get("java_home")
+    if java_home:
+        paths.append(f"{java_home.rstrip('/')}/bin")
+
+    if not paths:
+        return ""
+
+    paths = list(dict.fromkeys(paths))
+    path_prefix = ":".join(shlex.quote(path) for path in paths)
+    raw_path_prefix = ":".join(paths)
+    return (
+        f"AI_MONITOR_JDK_BIN_PATHS={shlex.quote(raw_path_prefix)}; export AI_MONITOR_JDK_BIN_PATHS; "
+        f"PATH={path_prefix}:$PATH; export PATH; "
+    )
+
+
+def _java_diagnostic_command(pid, node_config):
+    return (
+        JAVA_DIAGNOSTIC_COMMAND_TEMPLATE
+        .replace("__JAVA_PATH_SETUP__", _java_path_setup(node_config))
+        .replace("__PID__", shlex.quote(str(pid)))
+    )
 
 
 def _extract_top_java_pid(ps_output):
@@ -85,7 +150,8 @@ def collect_diagnostics(node_config, metric, retries=1, retry_delay=3):
             if metric in ("cpu", "memory"):
                 java_pid = _extract_top_java_pid(output)
                 if java_pid:
-                    _, jstdout, _ = ssh.exec_command(_sudo_wrap(JAVA_DIAGNOSTIC_COMMAND.format(pid=java_pid)))
+                    java_command = _java_diagnostic_command(java_pid, node_config)
+                    _, jstdout, _ = ssh.exec_command(_sudo_wrap(java_command))
                     java_output = jstdout.read().decode().strip()
                     output += f"\n\n=== Java 프로세스 진단 (PID {java_pid}) ===\n{java_output}"
 
