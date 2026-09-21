@@ -164,7 +164,7 @@ sudo scripts/install_node_exporter.sh
 - cron에 등록해 주기적으로 실행하는 것을 권장합니다.
 ```bash
 # 매일 새벽 3시 백업 (crontab -e)
-0 3 * * * /root/ai-monitor/scripts/backup_monitor_db.sh
+0 3 * * * ${home}/codex-ai-monitor/scripts/backup_monitor_db.sh
 ```
 
 ### `.env.example`
