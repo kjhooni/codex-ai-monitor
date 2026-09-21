@@ -1,0 +1,30 @@
+prometheus_url: "http://prometheus:9090"
+poll_interval_seconds: 60
+callback_base_url: "http://YOUR_PUBLIC_IP_OR_DOMAIN:8080"  # 담당자가 Teams 버튼을 누를 때 접근할 자동조치 서버 주소.
+                                                            # 비워두면 승인 절차 없이 AI 판단만으로 자동조치가 즉시 실행됨.
+
+thresholds:
+  cpu_percent: 85
+  memory_percent: 90
+  disk_percent: 90
+  swap_percent: 90
+
+# 모든 노드에 공통으로 적용되는 값. 노드별로 다르면 해당 노드 밑에 같은 키를 적어서 덮어쓰면 됨.
+defaults:
+  owner: "담당자명"
+  teams_mention_id: ""  # Teams 멘션용 AAD Object ID (선택, Azure AD에서 확인)
+  teams_webhook: "YOUR_TEAMS_WEBHOOK_URL"     # Teams 채널 Incoming Webhook URL 입력
+  ssh_key_path: "ssh_key.pem"
+  ssh_port: 22  # 노드별로 SSH 포트가 다르면 해당 노드 밑에 ssh_port를 적어서 덮어쓰면 됨
+
+nodes:
+  # os 값(rocky→cloud-user, ubuntu→ubuntu)에 따라 ssh_user가 자동으로 결정됨.
+  # 직접 ssh_user를 적으면 그 값이 우선하며, defaults에 없는 키(예: owner가 다른 담당자)도 노드별로 덮어쓸 수 있음.
+  kimjh-test01:
+    ip: "YOUR_NODE_IP"
+    os: "rocky"
+
+  kimjh-test02:
+    ip: "YOUR_NODE_IP"
+    os: "ubuntu"
+    ssh_port: 16022  # SSH 포트가 22가 아닌 경우 예시
