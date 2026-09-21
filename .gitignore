@@ -2,7 +2,7 @@
 .env
 ai-monitor/config.yaml
 prometheus/prometheus.yml
-ssh_key.pem
+*.pem
 
 # Claude Code
 .claude/
