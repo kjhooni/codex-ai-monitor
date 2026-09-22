@@ -184,6 +184,10 @@ API 키가 없어도 단순 분석 모드로 동작합니다.
 OPENAI_API_KEY=sk-...
 # 선택 사항: 지정하면 심각도별 기본 모델 대신 이 모델을 사용합니다.
 # OPENAI_MODEL=gpt-5.2
+
+# 선택 사항: 둘 다 지정하면 자동조치 webhook 서버(8080)에 HTTP Basic 인증이 걸립니다.
+# WEBHOOK_AUTH_USER=admin
+# WEBHOOK_AUTH_PASSWORD=change-me
 ```
 
 ## 시작하기

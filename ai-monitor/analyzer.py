@@ -117,7 +117,7 @@ auto_remediate 및 remediate_command 판단 기준:
             f"노드: {node}\n메트릭: {metric}\n현재값: {value:.1f}% (임계값: {threshold}%)\n"
             f"과거 이력 (최근 10건):\n{history_text}{diagnostics_text}\n\n이 상황을 분석해주세요."
         ),
-        max_output_tokens=1024,
+        max_output_tokens=4096,
         store=False,
         text={
             "format": {

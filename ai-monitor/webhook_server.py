@@ -1,7 +1,8 @@
 import os
+import secrets
 import threading
 from datetime import datetime, timedelta
-from flask import Flask, abort
+from flask import Flask, abort, request, Response
 from db import get_pending_action, update_pending_action_status, update_action
 from remediator import run as run_remediation
 from notifier import send_resolved_action
@@ -14,6 +15,29 @@ _mention_map = {}      # node → (mention_id, owner)
 # 링크가 Teams 메시지 포워딩, 브라우저 히스토리 등으로 새더라도 만료 후엔 실행 불가.
 ACTION_TOKEN_TTL_MINUTES = int(os.getenv("ACTION_TOKEN_TTL_MINUTES", "60"))
 
+# 자동조치 실행 링크(토큰 URL)가 유출되더라도 곧바로 실행되지 않도록 HTTP Basic 인증을 추가로 요구.
+# 둘 중 하나라도 비어있으면 인증 없이 기존처럼 동작(하위 호환).
+WEBHOOK_AUTH_USER = os.getenv("WEBHOOK_AUTH_USER", "")
+WEBHOOK_AUTH_PASSWORD = os.getenv("WEBHOOK_AUTH_PASSWORD", "")
+
+
+@app.before_request
+def _require_basic_auth():
+    if not WEBHOOK_AUTH_USER or not WEBHOOK_AUTH_PASSWORD:
+        return
+
+    auth = request.authorization
+    valid = (
+        auth is not None
+        and secrets.compare_digest(auth.username or "", WEBHOOK_AUTH_USER)
+        and secrets.compare_digest(auth.password or "", WEBHOOK_AUTH_PASSWORD)
+    )
+    if not valid:
+        return Response(
+            "인증이 필요합니다.", 401,
+            {"WWW-Authenticate": 'Basic realm="ai-monitor"'},
+        )
+
 
 def start(nodes_cfg, port=8080):
     for node, cfg in nodes_cfg.items():
@@ -25,7 +49,10 @@ def start(nodes_cfg, port=8080):
         daemon=True,
     )
     t.start()
-    print(f"[Webhook] 액션 서버 시작 - port {port}")
+    if WEBHOOK_AUTH_USER and WEBHOOK_AUTH_PASSWORD:
+        print(f"[Webhook] 액션 서버 시작 - port {port} (Basic Auth 활성화)")
+    else:
+        print(f"[Webhook] 액션 서버 시작 - port {port} (경고: WEBHOOK_AUTH_USER/PASSWORD 미설정 - 인증 없이 실행)")
 
 
 def _get_valid_pending_action(token):
