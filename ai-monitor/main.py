@@ -9,7 +9,7 @@ from db import init_db, open_incident, get_open_incident, resolve_incident, get_
 from prometheus_query import PrometheusClient
 from analyzer import analyze
 from notifier import send_alert, send_resolved
-from remediator import run as run_remediation, collect_diagnostics, REMEDIATION_SCRIPTS
+from remediator import collect_diagnostics, REMEDIATION_SCRIPTS
 import webhook_server
 
 load_dotenv()
@@ -134,10 +134,9 @@ def check_node(node_name, node_cfg, metrics, thresholds, callback_base_url=""):
                                action_token=action_token, callback_base_url=callback_base_url, diag_error=diag_error)
                     print(f"[ALERT] {node_name} {metric}={value:.1f}% - incident #{incident_id}")
 
-                    if result.get("auto_remediate") and not action_token:
-                        cmd, action_result = run_remediation(node_cfg, metric, remediate_cmd)
-                        update_action(incident_id, action_result)
-                        print(f"[REMEDIATE] {node_name} {metric}: {action_result}")
+                    # 자동조치 즉시 실행은 비활성화되어 있음 - 담당자가 Teams 링크로 직접 승인해야 실행됨.
+                    if result.get("auto_remediate") and remediate_cmd and not action_token:
+                        print(f"[REMEDIATE-SKIP] {node_name} {metric}: 자동실행 비활성화 - callback_base_url 미설정으로 담당자 승인 링크도 생성되지 않음. 수동 확인 필요: {remediate_cmd}")
                 else:
                     print(f"[SKIP] {node_name} {metric}={value:.1f}% - OpenAI 판단: 알림 불필요 ({result.get('analysis','')})")
         else:
