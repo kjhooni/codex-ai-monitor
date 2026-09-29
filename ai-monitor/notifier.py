@@ -72,6 +72,8 @@ def send_alert(webhook_url, owner, node, metric, value, threshold, analysis_resu
         return
 
     severity = analysis_result.get("severity", "high")
+    if severity in ("low", "medium"):
+        mention_id = ""
     card = _build_alert_card(owner, node, metric, value, threshold, analysis_result, severity, diagnostics, mention_id, action_token, callback_base_url, diag_error)
     _post(webhook_url, card)
 
