@@ -72,8 +72,8 @@ def check_node(node_name, node_cfg, metrics, thresholds, callback_base_url=""):
             print(f"[ALERT] {node_name} DOWN - incident #{incident_id}")
     else:
         if open_down:
-            resolve_incident(open_down["id"], open_down["detected_at"])
-            send_resolved(webhook, owner, node_name, "up", open_down["duration_min"] or 0)
+            duration_min = resolve_incident(open_down["id"], open_down["detected_at"])
+            send_resolved(webhook, owner, node_name, "up", duration_min)
             print(f"[RESOLVED] {node_name} UP again")
 
     if up == 0:
@@ -141,8 +141,8 @@ def check_node(node_name, node_cfg, metrics, thresholds, callback_base_url=""):
                     print(f"[SKIP] {node_name} {metric}={value:.1f}% - OpenAI 판단: 알림 불필요 ({result.get('analysis','')})")
         else:
             if open_inc:
-                resolve_incident(open_inc["id"], open_inc["detected_at"])
-                send_resolved(webhook, owner, node_name, metric, open_inc["duration_min"] or 0)
+                duration_min = resolve_incident(open_inc["id"], open_inc["detected_at"])
+                send_resolved(webhook, owner, node_name, metric, duration_min)
                 print(f"[RESOLVED] {node_name} {metric} 정상화 ({value:.1f}%)")
 
 

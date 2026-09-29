@@ -82,6 +82,7 @@ def resolve_incident(incident_id, detected_at):
             SET status = 'resolved', resolved_at = ?, duration_min = ?
             WHERE id = ?
         """, (now.isoformat(), duration, incident_id))
+    return duration
 
 
 def update_action(incident_id, action_taken):
