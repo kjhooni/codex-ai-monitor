@@ -225,6 +225,38 @@ docker compose up -d
 - Prometheus: `http://서버IP:9090`
 - 자동조치 서버: `http://서버IP:8080`
 
+## 모니터링 대상 서버 제외하기
+
+**반드시 ai-monitor → Prometheus 순서로 진행합니다.** Prometheus에서 먼저 빼면, 아직 예전 설정으로 돌고 있는 ai-monitor가 해당 서버의 메트릭이 사라진 것을 노드 다운으로 판단해 약 5분 뒤 다운 알림을 보냅니다.
+
+1. **ai-monitor에서 제외 (먼저)**
+
+`ai-monitor/config.yaml`의 `nodes:` 아래에서 해당 노드 블록을 통째로 삭제하거나 주석 처리합니다. (노드 이름 줄과 `ip`/`os`/`ssh_port` 줄 모두)
+```yaml
+  # sg-xxx-web01:
+  #   ip: "172.25.x.x"
+  #   os: "rocky"
+  #   ssh_port: 16022
+```
+config.yaml은 기동 시 한 번만 읽으므로 재시작해야 반영됩니다.
+```bash
+docker compose restart ai-monitor
+```
+
+2. **Prometheus에서 제외 (나중)**
+
+`prometheus/prometheus.yml`의 `node-exporter` targets에서 해당 IP 줄(`- '172.25.x.x:9100'`)을 삭제하고 재시작합니다.
+```bash
+docker compose restart prometheus
+```
+
+3. **확인**
+```bash
+docker logs --since 5m ai-monitor | grep sg-xxx-web01   # 출력이 없으면 정상
+```
+
+> 일시적으로만 제외하려면 1번만 해도 알림은 멈춥니다. Prometheus는 계속 수집만 하므로 다시 넣을 때 config.yaml만 되돌리면 됩니다.
+
 ## 모니터링 항목
 
 | 메트릭 | 기본 임계값 | 설명 |
